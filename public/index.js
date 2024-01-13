@@ -1,5 +1,10 @@
-var socket = io();
 
+//import { io } from "https://cdn.socket.io/4.7.4/socket.io.esm.min.js";
+    
+const socket = io();
+socket.on('connect', () => {
+   console.log('Successfully connected!');
+ });
 import * as CANNON from 'https://cdn.skypack.dev/cannon-es';
 
 import * as THREE from 'three';
@@ -148,10 +153,10 @@ function render() {
    {
       for (const model of models)
       {
-         model.mesh.rotation.x += .01;
-         model.mesh.rotation.y += .01;
-         let mesh = { name: model.mesh.name, position: model.mesh.position, quaternion: model.mesh.quaternion.toArray() };
-         socket.emit('updateModel', (mesh));
+      model.mesh.position.copy(model.body.position)
+      model.mesh.quaternion.copy(model.body.quaternion)
+      let mesh = { name: model.mesh.name, position: model.mesh.position, quaternion: model.mesh.quaternion.toArray() };
+      socket.emit('updateModel', (mesh));
       }
    }
 
@@ -160,8 +165,31 @@ function render() {
 }
 
 document.addEventListener('click', () => {
-   animate = !animate;
+   throwDice();
 });
+
+function throwDice () {
+   models.forEach((d, dIdx) => {
+
+      d.body.velocity.setZero();
+      d.body.angularVelocity.setZero();
+
+      d.body.position = new CANNON.Vec3(6, dIdx * 1.5, 0);
+      d.mesh.position.copy(d.body.position);
+
+      d.mesh.rotation.set(2 * Math.PI * Math.random(), 0, 2 * Math.PI * Math.random())
+      d.body.quaternion.copy(d.mesh.quaternion);
+
+      const force = 3 + 5 * Math.random();
+      d.body.applyImpulse(
+         new CANNON.Vec3(-force, force, 0),
+         new CANNON.Vec3(0, 0, .2)
+      );
+
+      d.body.allowSleep = true;
+      animate = !animate;
+   });
+}
 
 render();
 
