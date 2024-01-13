@@ -21,9 +21,9 @@ camera.position.set(0, .5, 4).multiplyScalar(7);
 //camera.position.z = 10;
 const canvasEl = document.querySelector('#canvas');
 var renderer = new THREE.WebGLRenderer({
-    alpha: true,
-    antialias: true,
-    canvas: canvasEl
+   alpha: true,
+   antialias: true,
+   canvas: canvasEl
 });
 
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -44,8 +44,7 @@ controls.mouseButtons = {
    RIGHT: THREE.MOUSE.PAN
 }
 controls.touches = {
-   TWO: THREE.TOUCH.DOLLY_ROTATE,
-   THREE: THREE.TOUCH.PAN
+   TWO: THREE.TOUCH.DOLLY_ROTATE
 }
 
 let frames = 0, prevTime = performance.now(), highlightedObject, highlightedModelIndex, isMouseDown;
@@ -227,4 +226,37 @@ window.addEventListener('resize', () => {
    camera.aspect = window.innerWidth / window.innerHeight;
    camera.updateProjectionMatrix();
    renderer.setSize( window.innerWidth, window.innerHeight );
+});
+
+let timerGoing = false;
+controls.mouseButtons = {
+   LEFT: THREE.MOUSE.ROTATE,
+   MIDDLE: THREE.MOUSE.DOLLY,
+   RIGHT: THREE.MOUSE.PAN
+}
+controls.touches = {
+   ONE: THREE.TOUCH.ROTATE,
+   TWO: THREE.TOUCH.DOLLY_PAN
+}
+
+window.addEventListener('touchstart', () => {
+   if (!timerGoing) {
+      timerGoing = true;
+      controls.enableRotate = true;
+      setTimeout(() => {
+         if (timerGoing){
+            controls.enableRotate = false;
+            timerGoing = false;
+            document.getElementById('touch').innerHTML = "false";
+         }
+         else{
+            document.getElementById('touch').innerHTML = "true";
+         }
+      }, 200);
+      return;
+   }
+   timerGoing = false;
+})
+window.addEventListener('touchend', () => {
+   if (!timerGoing) controls.enableRotate = false;
 });
