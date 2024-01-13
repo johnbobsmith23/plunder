@@ -40,8 +40,12 @@ controls.enablePan = true;
 controls.maxPolarAngle = Math.PI / 2;
 controls.enableDamping = true;
 controls.mouseButtons = {
-    MIDDLE: THREE.MOUSE.ROTATE,
-    RIGHT: THREE.MOUSE.PAN
+   MIDDLE: THREE.MOUSE.ROTATE,
+   RIGHT: THREE.MOUSE.PAN
+}
+controls.touches = {
+   TWO: THREE.TOUCH.DOLLY_ROTATE,
+   THREE: THREE.TOUCH.PAN
 }
 
 let frames = 0, prevTime = performance.now(), highlightedObject, highlightedModelIndex, isMouseDown;
