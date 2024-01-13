@@ -148,7 +148,7 @@ let animate = false;
 function render() {
    physicsWorld.fixedStep();
    frames++;
-   
+
    if (animate)
    {
       for (const model of models)
@@ -198,6 +198,7 @@ socket.on('hello', (message) => {
    if ( time >= prevTime + 1000 ) {
    
       console.log( Math.round( ( frames * 1000 ) / ( time - prevTime ) ) );
+      document.getElementById('fps').innerHTML = frames;
       
       frames = 0;
       prevTime = time;
@@ -213,4 +214,12 @@ socket.on('updatePosition', (mesh) => {
    
    model.mesh.position.copy(mesh.position);
    model.mesh.quaternion.fromArray(mesh.quaternion);
+});
+
+
+// Handle window resize
+window.addEventListener('resize', () => {
+   camera.aspect = window.innerWidth / window.innerHeight;
+   camera.updateProjectionMatrix();
+   renderer.setSize(window.innerWidth, window.innerHeight);
 });
