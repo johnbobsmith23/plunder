@@ -10,6 +10,13 @@ import * as CANNON from 'https://cdn.skypack.dev/cannon-es';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 
 // Set up scene
@@ -28,12 +35,15 @@ var renderer = new THREE.WebGLRenderer({
 });
 
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 var rect = renderer.domElement.getBoundingClientRect();
 
 let physicsWorld;
+let composer, effectFXAA, outlinePass;
+
 // Load a GLTF model (dice)
 const loader = new GLTFLoader();
 
@@ -63,7 +73,7 @@ addLight();
 function initPhysics() {
    physicsWorld = new CANNON.World({
       allowSleep: true,
-      gravity: new CANNON.Vec3(0, -9.81, 0),
+      gravity: new CANNON.Vec3(0, -9.81 * 8, 0),
    })
    physicsWorld.defaultContactMaterial.restitution = .2;
 }
@@ -92,22 +102,15 @@ function createFloor() {
 }
 
 function addLight() {
-   const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+   const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
    scene.add(ambientLight);
 
-   // Add directional light to cast shadows
-   const directionalLight = new THREE.DirectionalLight(0xffffff, 5);
-   directionalLight.position.set(5, 50, 5);
-   directionalLight.castShadow = true; // Enable shadow casting for the light
-   directionalLight.shadow.mapSize.width = 2048;
-   directionalLight.shadow.mapSize.height = 2048;
-   directionalLight.shadow.camera.left = -80;
-   directionalLight.shadow.camera.right = 80;
-   directionalLight.shadow.camera.top = 10;
-   directionalLight.shadow.camera.bottom = -10;
-   directionalLight.shadow.camera.near = 5;
-   directionalLight.shadow.camera.far = 400;
-   scene.add(directionalLight);
+   var pointLight = new THREE.PointLight(0xffffff, 3, 0, 0);
+   pointLight.position.set(10, 10, 10);
+   pointLight.castShadow = true;
+   pointLight.shadow.mapSize.width = 2048;
+   pointLight.shadow.mapSize.height = 2048;
+   scene.add(pointLight);   
 }
 
 const models = [];
@@ -118,13 +121,12 @@ function loadModel(url, position) {
    const loader = new GLTFLoader();
    loader.load(`./assets/${url}`, (gltf) => {
       const mesh = gltf.scene;
-      mesh.name = `dice${i++}`;
       const body = new CANNON.Body({
-         mass: 1,
+         mass: 9.04,
          shape: new CANNON.Box(new CANNON.Vec3(1, 1, 1)),
-         sleepTimeLimit: .1
+         sleepTimeLimit: .2
       });
-      body.mass = body.shapes[0].volume() * 1.13;
+      
       const model = {mesh, body};
 
       model.mesh.position.copy(position);
@@ -138,8 +140,10 @@ function loadModel(url, position) {
       });
       model.mesh.castShadow = true;
       model.mesh.receiveShadow = true;
-      model.mesh.isDraggable = true;
-      model.mesh.isSelected = false;
+      model.isDraggable = true;
+      model.isSelected = false;
+      model.name = url.slice(0,-4);
+      console.log(model.name);
       
       scene.add(model.mesh);
       physicsWorld.addBody(model.body);
@@ -152,31 +156,58 @@ loadModel('move_dice.glb', new THREE.Vector3(-3, 0, 0));
 loadModel('defend_dice.glb', new THREE.Vector3(0, -1, 0));
 loadModel('attack_dice.glb', new THREE.Vector3(3, 0, 0));
 
+function initPostProcessing() {
+   composer = new EffectComposer( renderer );
+
+   const renderPass = new RenderPass( scene, camera );
+   composer.addPass( renderPass );
+
+   outlinePass = new OutlinePass( new THREE.Vector2( window.innerWidth, window.innerHeight ), scene, camera );
+   composer.addPass( outlinePass );
+
+   const outputPass = new OutputPass();
+   composer.addPass( outputPass );
+
+   effectFXAA = new ShaderPass( FXAAShader );
+   effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
+   composer.addPass( effectFXAA );
+}
+initPostProcessing();
+
 let animate = false;
 let receivingAnimation = false;
 
-function render() {
+function updatePhysics() {
    physicsWorld.fixedStep();
-   frames++;
-   if (animate && !receivingAnimation)
+   
+   for (const model of models)
    {
-      for (const model of models)
-      {
-         model.mesh.position.copy(model.body.position)
-         model.mesh.quaternion.copy(model.body.quaternion)
-         let mesh = { name: model.mesh.name, position: model.mesh.position, quaternion: model.mesh.quaternion.toArray() };
-         socket.emit('updateModel', (mesh));
-      }
+      model.mesh.position.copy(model.body.position);
+      model.mesh.quaternion.copy(model.body.quaternion);
    }
+}
 
+function render() {
+   updatePhysics();
+   frames++;
+   
    if (!models.find(model => {return model.body.sleepState != 2;}))
    {
       receivingAnimation = false;
       animate = false;
    }
+
+   for (const model of models)
+   {
+      if (animate && !receivingAnimation){
+         let mesh = { name: model.name, position: model.mesh.position, quaternion: model.mesh.quaternion.toArray() };
+         socket.emit('updateModel', (mesh));
+      }
+   }
    
    controls.update();
-   renderer.render(scene, camera);
+   //renderer.render(scene, camera);
+   composer.render();
    requestAnimationFrame(render);
 }
 
@@ -187,9 +218,9 @@ document.addEventListener('dblclick', () => {
 function throwDice () {
    if (animate) return;
    models.forEach((d, dIdx) => {
-      console.log(d);
       if (!d.mesh.isSelected)
       {
+         console.log(d.body.mass);
          d.body.velocity.setZero();
          d.body.angularVelocity.setZero();
 
@@ -231,11 +262,11 @@ socket.on('hello', (message) => {
 
 socket.on('updatePosition', (mesh) => {
    let model = models.find(model => {
-      return model.mesh.name == mesh.name;
+      return model.name == mesh.name;
    });
    
-   model.mesh.position.copy(mesh.position);
-   model.mesh.quaternion.fromArray(mesh.quaternion);
+   model.body.position.copy(mesh.position);
+   model.body.quaternion.set(...mesh.quaternion);
    receivingAnimation = true;
    animate = true;
 });
@@ -245,6 +276,7 @@ socket.on('updatePosition', (mesh) => {
 window.addEventListener('resize', () => {
    camera.aspect = window.innerWidth / window.innerHeight;
    camera.updateProjectionMatrix();
+   effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
    renderer.setSize( window.innerWidth, window.innerHeight );
    rect = renderer.domElement.getBoundingClientRect();
 });
@@ -275,6 +307,11 @@ window.addEventListener('touchend', () => {
 
 // Allows user to pick up and drop objects on-click events
 window.addEventListener("click", (event) => {
+   if (draggableObject){
+      draggableObject = undefined;
+      return;
+   }
+
    // If NOT 'holding' object on-click, set container to <object> to 'pickup' the object.
    updateMousePosition(event);
    raycaster.setFromCamera(mouse, camera);
@@ -288,24 +325,63 @@ window.addEventListener("click", (event) => {
       if (!current.isSelected) {
          current.children[0].material.emissive.setHex(0x00ff00);
          current.isSelected = true;
-         console.log(current);
       } else {
          current.children[0].material.emissive.setHex(0x000000);
          current.isSelected = false;
       }
+      if (current.isDraggable) {
+         console.log("drag");
+         draggableObject = current;
+      }
    }
 });
 
-
-function onMouseMove(event) {
-   // Convert mouse coordinates to normalized device coordinates
-   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+function dragModel() {
+   // If 'holding' an model, move the model
+   if (draggableObject) {
+         raycaster.setFromCamera(mouse, camera);
+         const found = raycaster.intersectObjects(scene.children);
+         if (found.length > 0) {
+            for (let obj3d of found) {
+               if (!obj3d.object.isDraggablee) {
+                     draggableObject.position.x = obj3d.point.x;
+                     draggableObject.position.z = obj3d.point.z;
+               break;
+               }
+            }
+         }
+   }
 }
 
-document.addEventListener('mousemove', updateMousePosition);
+function onMouseMove(event) {
+   updateMousePosition(event);
+   let model = getRaycasterIntersection();
+   if (model) {
+      outlinePass.selectedObjects = [model.mesh.children[0]];
+      console.log(outlinePass.selectedObjects);
+   }
+   dragModel();
+}
+
+
+document.addEventListener('mousemove', onMouseMove);
 
 function updateMousePosition(event) {   
    mouse.x = ( ( event.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
    mouse.y = - ( ( event.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
+}
+
+function getRaycasterIntersection() {
+   raycaster.setFromCamera(mouse, camera);
+   const found = raycaster.intersectObjects(models.map(model => model.mesh));
+   if (found.length)
+   {
+      outlinePass.selectedObjects.push(found[0].object);
+      let current = found[0].object;
+      while (current.parent.parent !== null) {
+         console.log(current);
+         current = current.parent;
+      }
+      return (models.find(model => {return model.mesh === current;}));
+   }
 }
