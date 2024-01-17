@@ -52,7 +52,6 @@ controls.mouseButtons = {
    RIGHT: THREE.MOUSE.PAN
 }
 controls.touches = {
-   ONE: THREE.TOUCH.ROTATE,
    TWO: THREE.TOUCH.DOLLY_PAN
 }
 
@@ -266,7 +265,10 @@ window.addEventListener('resize', () => {
 let timerGoing = false;
 
 window.addEventListener('touchstart', (event) => {
-   onMouseDown(event);
+   if (event.touches.length === 1){
+      onMouseMove(event.touches[0]);
+      onMouseDown(event.touches[0]);
+   }
    return;
    if (!timerGoing) {
       timerGoing = true;
@@ -288,6 +290,14 @@ window.addEventListener('touchstart', (event) => {
 
 window.addEventListener('touchend', () => {
    if (!timerGoing) controls.enableRotate = false;
+   stopDrag();
+});
+
+window.addEventListener('touchmove', (event) => {
+   console.log(`event ${event.changedTouches[0].clientY}`);
+   console.log(`target ${event.targetTouches[0].clientY}`);
+   console.log(`touches ${event.touches[0].clientY}`);
+   onMouseMove(event.touches[0]);
 });
 
 const _plane = new THREE.Plane();
@@ -301,7 +311,9 @@ window.addEventListener('mousedown', onMouseDown);
 function onMouseDown(event) {
    document.getElementById('touch').innerHTML = 'mouseDown';
    updateMousePosition(event);
+   console.log(mouse);
    if (outlinePass.selectedObjects.length > 0){
+      console.log('objectFound');
       draggableObject = models.find(model => {return model.mesh === outlinePass.selectedObjects[0];});
       draggableObject.isSelected = true;
       draggableObject.body.wakeUp();
@@ -315,12 +327,17 @@ function onMouseDown(event) {
 }
 
 window.addEventListener('mouseup', () => {
+   stopDrag();
+});
+
+function stopDrag() {
    document.getElementById('touch').innerHTML = 'mouseup';
    if (draggableObject){
       draggableObject.isSelected = false;
       draggableObject = undefined;
+      outlinePass.selectedObjects = [];
    }
-});
+}
 
 function onMouseMove(event) {
    updateMousePosition(event);
