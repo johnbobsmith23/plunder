@@ -265,7 +265,9 @@ window.addEventListener('resize', () => {
 
 let timerGoing = false;
 
-window.addEventListener('touchstart', () => {
+window.addEventListener('touchstart', (event) => {
+   onMouseDown(event);
+   return;
    if (!timerGoing) {
       timerGoing = true;
       controls.enableRotate = true;
@@ -294,7 +296,9 @@ const _offset = new THREE.Vector3();
 const _inverseMatrix = new THREE.Matrix4();
 const _intersection = new THREE.Vector3();
 
-window.addEventListener('mousedown', (event) => {
+window.addEventListener('mousedown', onMouseDown);
+
+function onMouseDown(event) {
    document.getElementById('touch').innerHTML = 'mouseDown';
    updateMousePosition(event);
    if (outlinePass.selectedObjects.length > 0){
@@ -308,7 +312,7 @@ window.addEventListener('mousedown', (event) => {
          _offset.copy( _intersection ).sub( draggableObject.mesh.position );
       }
    }
-});
+}
 
 window.addEventListener('mouseup', () => {
    document.getElementById('touch').innerHTML = 'mouseup';
