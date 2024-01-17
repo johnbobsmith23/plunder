@@ -11,8 +11,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { DragControls } from 'three/addons/controls/DragControls.js';
+import Stats from 'three/addons/libs/stats.module.js';
 
+let stats;
+stats = new Stats();
+document.body.appendChild( stats.dom );
 // Set up scene
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 300);
@@ -52,6 +55,7 @@ controls.mouseButtons = {
    RIGHT: THREE.MOUSE.PAN
 }
 controls.touches = {
+   ONE: THREE.TOUCH.ROTATE,
    TWO: THREE.TOUCH.DOLLY_PAN
 }
 
@@ -70,7 +74,7 @@ function initPhysics() {
       allowSleep: true,
       gravity: new CANNON.Vec3(0, -9.81 * 8, 0),
    });
-   physicsWorld.defaultContactMaterial.restitution = .2;
+   physicsWorld.defaultContactMaterial.restitution = .1;
 }
 
 function createFloor() {
@@ -116,7 +120,7 @@ function loadModel(url, position) {
    loader.load(`./assets/${url}`, (gltf) => {
       const mesh = gltf.scene;
       const body = new CANNON.Body({
-         mass: 9.04,
+         mass: 1,
          shape: new CANNON.Box(new CANNON.Vec3(1, 1, 1)),
          sleepTimeLimit: .2
       });
@@ -168,6 +172,7 @@ function initPostProcessing() {
 let animate = false;
 let receivingAnimation = false;
 
+let dragon;
 function updatePhysics() {
    physicsWorld.fixedStep();
    
@@ -176,15 +181,21 @@ function updatePhysics() {
       if (model.isSelected) {
          raycaster.setFromCamera(mouse, camera);
          if (raycaster.ray.intersectPlane( _plane, _intersection )) {
+            model.body.previousPosition.copy(model.body.position);
             model.body.position.copy( _intersection);
             model.body.velocity.setZero();
          }
+      }
+      if (dragon) {
+         console.log('velocity');
+         console.log(model.body.velocity);
+         console.log(model.body.angularVelocity);
+         dragon = false;
       }
       model.mesh.position.copy(model.body.position);
       model.mesh.quaternion.copy(model.body.quaternion);
    }
 }
-
 function render() {
    updatePhysics();
    frames++;
@@ -206,6 +217,7 @@ function render() {
    controls.update();
    composer.render();
    requestAnimationFrame(render);
+   stats.update();
 }
 
 document.addEventListener('dblclick', () => {
@@ -289,14 +301,11 @@ window.addEventListener('touchstart', (event) => {
 });
 
 window.addEventListener('touchend', () => {
-   if (!timerGoing) controls.enableRotate = false;
+   controls.enabled = true;
    stopDrag();
 });
 
 window.addEventListener('touchmove', (event) => {
-   console.log(`event ${event.changedTouches[0].clientY}`);
-   console.log(`target ${event.targetTouches[0].clientY}`);
-   console.log(`touches ${event.touches[0].clientY}`);
    onMouseMove(event.touches[0]);
 });
 
@@ -311,7 +320,6 @@ window.addEventListener('mousedown', onMouseDown);
 function onMouseDown(event) {
    document.getElementById('touch').innerHTML = 'mouseDown';
    updateMousePosition(event);
-   console.log(mouse);
    if (outlinePass.selectedObjects.length > 0){
       console.log('objectFound');
       draggableObject = models.find(model => {return model.mesh === outlinePass.selectedObjects[0];});
@@ -320,6 +328,7 @@ function onMouseDown(event) {
       _plane.setFromNormalAndCoplanarPoint( camera.getWorldDirection( _plane.normal ), draggableObject.mesh.position);
       if ( raycaster.ray.intersectPlane( _plane, _intersection ) ) {
          document.getElementById('touch').innerHTML = 'dragEnabled';
+         controls.enabled = false;
          _inverseMatrix.copy( draggableObject.mesh.parent.matrixWorld ).invert();
          _offset.copy( _intersection ).sub( draggableObject.mesh.position );
       }
@@ -331,8 +340,11 @@ window.addEventListener('mouseup', () => {
 });
 
 function stopDrag() {
-   document.getElementById('touch').innerHTML = 'mouseup';
+   dragon = true;
+   console.log('mouseup');
    if (draggableObject){
+      draggableObject.body.velocity.copy(draggableObject.body.position.vsub(draggableObject.body.previousPosition).scale(60));
+      draggableObject.body.angularVelocity.set(3 * Math.random(), 3 * Math.random(), 3 * Math.random());
       draggableObject.isSelected = false;
       draggableObject = undefined;
       outlinePass.selectedObjects = [];
