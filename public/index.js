@@ -1,6 +1,3 @@
-
-//import { io } from "https://cdn.socket.io/4.7.4/socket.io.esm.min.js";
-    
 const socket = io();
 socket.on('connect', () => {
    console.log('Successfully connected!');
@@ -12,12 +9,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
-import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-
+import { DragControls } from 'three/addons/controls/DragControls.js';
 
 // Set up scene
 const scene = new THREE.Scene();
@@ -40,9 +34,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 var rect = renderer.domElement.getBoundingClientRect();
+const models = [];
 
 let physicsWorld;
-let composer, effectFXAA, outlinePass;
+let composer, outlinePass;
 
 // Load a GLTF model (dice)
 const loader = new GLTFLoader();
@@ -61,8 +56,8 @@ controls.touches = {
    TWO: THREE.TOUCH.DOLLY_PAN
 }
 
-let frames = 0, prevTime = performance.now(), highlightedObject, highlightedModelIndex, isMouseDown;
-let draggableObject;
+let frames = 0;
+var draggableObject;
 
 let floor;
 
@@ -70,11 +65,12 @@ initPhysics();
 createFloor();
 addLight();
 
+
 function initPhysics() {
    physicsWorld = new CANNON.World({
       allowSleep: true,
       gravity: new CANNON.Vec3(0, -9.81 * 8, 0),
-   })
+   });
    physicsWorld.defaultContactMaterial.restitution = .2;
 }
 
@@ -113,7 +109,6 @@ function addLight() {
    scene.add(pointLight);   
 }
 
-const models = [];
 let i = 0;
 
 // Function to load a GLB model and add it to the scene
@@ -143,7 +138,6 @@ function loadModel(url, position) {
       model.isDraggable = true;
       model.isSelected = false;
       model.name = url.slice(0,-4);
-      console.log(model.name);
       
       scene.add(model.mesh);
       physicsWorld.addBody(model.body);
@@ -156,23 +150,21 @@ loadModel('move_dice.glb', new THREE.Vector3(-3, 0, 0));
 loadModel('defend_dice.glb', new THREE.Vector3(0, -1, 0));
 loadModel('attack_dice.glb', new THREE.Vector3(3, 0, 0));
 
+initPostProcessing();
+
 function initPostProcessing() {
    composer = new EffectComposer( renderer );
 
-   const renderPass = new RenderPass( scene, camera );
+   const renderPass = new RenderPass(scene, camera);
    composer.addPass( renderPass );
 
-   outlinePass = new OutlinePass( new THREE.Vector2( window.innerWidth, window.innerHeight ), scene, camera );
+   outlinePass = new OutlinePass( new THREE.Vector2( window.innerWidth, window.innerHeight ), scene, camera);
+   outlinePass.edgeStrength = 3;
    composer.addPass( outlinePass );
 
    const outputPass = new OutputPass();
    composer.addPass( outputPass );
-
-   effectFXAA = new ShaderPass( FXAAShader );
-   effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
-   composer.addPass( effectFXAA );
 }
-initPostProcessing();
 
 let animate = false;
 let receivingAnimation = false;
@@ -182,6 +174,13 @@ function updatePhysics() {
    
    for (const model of models)
    {
+      if (model.isSelected) {
+         raycaster.setFromCamera(mouse, camera);
+         if (raycaster.ray.intersectPlane( _plane, _intersection )) {
+            model.body.position.copy( _intersection);
+            model.body.velocity.setZero();
+         }
+      }
       model.mesh.position.copy(model.body.position);
       model.mesh.quaternion.copy(model.body.quaternion);
    }
@@ -206,7 +205,6 @@ function render() {
    }
    
    controls.update();
-   //renderer.render(scene, camera);
    composer.render();
    requestAnimationFrame(render);
 }
@@ -220,7 +218,6 @@ function throwDice () {
    models.forEach((d, dIdx) => {
       if (!d.mesh.isSelected)
       {
-         console.log(d.body.mass);
          d.body.velocity.setZero();
          d.body.angularVelocity.setZero();
 
@@ -236,8 +233,8 @@ function throwDice () {
             new CANNON.Vec3(0, 0, .2)
          );
 
-         d.body.allowSleep = true;
-         d.body.sleepState = 0;
+         d.allowSleep = true;
+
          animate = true;
       }
    });
@@ -245,20 +242,6 @@ function throwDice () {
 
 throwDice();
 render();
-
-socket.on('hello', (message) => {
-   const time = performance.now();
-   if ( time >= prevTime + 1000 ) {
-   
-      //console.log( Math.round( ( frames * 1000 ) / ( time - prevTime ) ) );
-      document.getElementById('fps').innerHTML = frames;
-      
-      frames = 0;
-      prevTime = time;
-   
-   }
-   socket.emit('count', message + 1);
-});
 
 socket.on('updatePosition', (mesh) => {
    let model = models.find(model => {
@@ -276,7 +259,6 @@ socket.on('updatePosition', (mesh) => {
 window.addEventListener('resize', () => {
    camera.aspect = window.innerWidth / window.innerHeight;
    camera.updateProjectionMatrix();
-   effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
    renderer.setSize( window.innerWidth, window.innerHeight );
    rect = renderer.domElement.getBoundingClientRect();
 });
@@ -291,97 +273,74 @@ window.addEventListener('touchstart', () => {
          if (timerGoing){
             controls.enableRotate = false;
             timerGoing = false;
-            document.getElementById('touch').innerHTML = "false";
+            //document.getElementById('touch').innerHTML = "false";
          }
          else{
-            document.getElementById('touch').innerHTML = "true";
+            //document.getElementById('touch').innerHTML = "true";
          }
       }, 200);
       return;
    }
    timerGoing = false;
-})
+});
+
 window.addEventListener('touchend', () => {
    if (!timerGoing) controls.enableRotate = false;
 });
 
-// Allows user to pick up and drop objects on-click events
-window.addEventListener("click", (event) => {
-   if (draggableObject){
-      draggableObject = undefined;
-      return;
-   }
+const _plane = new THREE.Plane();
+const _worldPosition = new THREE.Vector3();
+const _offset = new THREE.Vector3();
+const _inverseMatrix = new THREE.Matrix4();
+const _intersection = new THREE.Vector3();
 
-   // If NOT 'holding' object on-click, set container to <object> to 'pickup' the object.
+window.addEventListener('mousedown', (event) => {
+   document.getElementById('touch').innerHTML = 'mouseDown';
    updateMousePosition(event);
-   raycaster.setFromCamera(mouse, camera);
-   const found = raycaster.intersectObjects(models.map(model => model.mesh));
-   if (found.length)
-   {
-      let current = found[0].object;
-      while (current.parent.parent !== null) {
-         current = current.parent;
-      }
-      if (!current.isSelected) {
-         current.children[0].material.emissive.setHex(0x00ff00);
-         current.isSelected = true;
-      } else {
-         current.children[0].material.emissive.setHex(0x000000);
-         current.isSelected = false;
-      }
-      if (current.isDraggable) {
-         console.log("drag");
-         draggableObject = current;
+   if (outlinePass.selectedObjects.length > 0){
+      draggableObject = models.find(model => {return model.mesh === outlinePass.selectedObjects[0];});
+      draggableObject.isSelected = true;
+      draggableObject.body.wakeUp();
+      _plane.setFromNormalAndCoplanarPoint( camera.getWorldDirection( _plane.normal ), draggableObject.mesh.position);
+      if ( raycaster.ray.intersectPlane( _plane, _intersection ) ) {
+         document.getElementById('touch').innerHTML = 'dragEnabled';
+         _inverseMatrix.copy( draggableObject.mesh.parent.matrixWorld ).invert();
+         _offset.copy( _intersection ).sub( draggableObject.mesh.position );
       }
    }
 });
 
-function dragModel() {
-   // If 'holding' an model, move the model
-   if (draggableObject) {
-         raycaster.setFromCamera(mouse, camera);
-         const found = raycaster.intersectObjects(scene.children);
-         if (found.length > 0) {
-            for (let obj3d of found) {
-               if (!obj3d.object.isDraggablee) {
-                     draggableObject.position.x = obj3d.point.x;
-                     draggableObject.position.z = obj3d.point.z;
-               break;
-               }
-            }
-         }
+window.addEventListener('mouseup', () => {
+   document.getElementById('touch').innerHTML = 'mouseup';
+   if (draggableObject){
+      draggableObject.isSelected = false;
+      draggableObject = undefined;
    }
-}
+});
 
 function onMouseMove(event) {
    updateMousePosition(event);
-   let model = getRaycasterIntersection();
-   if (model) {
-      outlinePass.selectedObjects = [model.mesh.children[0]];
-      console.log(outlinePass.selectedObjects);
+   if (draggableObject) {
+      return;
    }
-   dragModel();
+   const mesh = [];
+   raycaster.setFromCamera(mouse, camera);
+   if (raycaster.intersectObjects([...models.map(model => model.mesh)], true, mesh).length) {
+      const model = models.find(model => {return model.mesh === mesh[0].object.parent;});
+      if (model.isDraggable) {
+         document.getElementById.innerHTML = 'highlight';
+         outlinePass.selectedObjects = [model.mesh];
+         _plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection( _plane.normal ), model.mesh.position);
+      }
+   } else {
+      outlinePass.selectedObjects = [];
+      draggableObject = undefined;
+   }
 }
 
-
-document.addEventListener('mousemove', onMouseMove);
+window.addEventListener('mousemove', onMouseMove);
 
 function updateMousePosition(event) {   
    mouse.x = ( ( event.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
    mouse.y = - ( ( event.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
-}
-
-function getRaycasterIntersection() {
-   raycaster.setFromCamera(mouse, camera);
-   const found = raycaster.intersectObjects(models.map(model => model.mesh));
-   if (found.length)
-   {
-      outlinePass.selectedObjects.push(found[0].object);
-      let current = found[0].object;
-      while (current.parent.parent !== null) {
-         console.log(current);
-         current = current.parent;
-      }
-      return (models.find(model => {return model.mesh === current;}));
-   }
 }
